@@ -11,6 +11,10 @@ userIdByName() {
 ownerIdDir() {
     ls -ldn $1|xargs|cut -d ' ' -f 3
 }
+
+hashUserPass() {
+    grep "^$1:" /etc/shadow|xargs|cut -d: -f2
+}
 $@
 
 

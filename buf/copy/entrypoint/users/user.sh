@@ -2,19 +2,44 @@
 
 script_path=$(dirname $(readlink -f "$0"))
 
-lib="$script_path/../lib/system.sh"
-configLib="$script_path/../lib/config.sh $1"
+config_file=
 duplicate_user=NO
-config_file=$1
-command=$2
-user_name=$3
-shift
-shift
-shift
+while getopts "c:d" options; do
+        case "${options}" in
+        c)
+        config_file="${OPTARG}"
+        ;;
+        d)
+        duplicate_user=YES
+        ;;
+        esac
+done
+shift $((OPTIND - 1))
 
+if [[ -z "$config_file" ]]
+then
+    echo "($0) Warn: Configuration file needs to be set. [-c /path/file]">&2
+    return 1
+fi
+if [[ ! -e "$config_file" ]]
+    then
+    echo "($0) Warn: Config '$config_file' file missing.">&2
+    return 1
+fi
+lib="$script_path/../lib/system.sh"
+configLib="$script_path/../lib/config.sh $config_file"
+
+command=$1
+user_name=$(echo $2|tr -d '"')
+shift
+shift
+if [[ -z "$DEFAULT_ACCESS" ]]
+then
+    DEFAULT_ACCESS=700
+fi
 local_root=$($configLib configParam local_root)
 guest_username=$($configLib configParam guest_username)
-user_config_dir=$($configLib  configParam user_config_dir)
+user_config_dir=$($configLib configParam user_config_dir)
 
 _initUserSettings(){
     local configUserLib="$script_path/../lib/config.sh $user_config_dir/$user_name"
@@ -40,38 +65,80 @@ _initUserSettings(){
     fi
 }
 
-_addAsGuest(){
+_addShareUserGuest(){
+    local user_name=$($configLib configParam guest_username);
+    if [[ -z "$($lib userIdByName $user_name)" ]]
+    then
+        local local_root=$($configLib configParam local_root);
+        if [[ ! -z "$(echo \"$local_root\"|grep \$USER)" ]]
+        then
+            local_root=
+        fi
+        echo "- Init guest user - '$user_name'"
+        _addLocal NONE
+    fi
+}
+
+_addUserGuest(){
     local user_name=$guest_username;
+    echo "- Init guest user - '$user_name'"
     _addLocal NONE
 }
 
 _addLocal(){
     local pass=$1
-    local opt_uid ls_dir owner_id
+    local opt_uid opt_home ls_dir owner_id
+    local init_dir=NO
+    local passwd_chroot_enable=$($configLib configParam passwd_chroot_enable)
     if [[ -z "$($lib userIdByName $user_name)" ]]
     then
-        if [[ -d "$local_root" ]]
+        #opt_home="-H"
+        opt_home="-h /var/lib/ftp/$user_name"
+        mkdir -p  "/var/lib/ftp/$user_name"
+        if [[ ! -z "$local_root"  ]]
         then
-            owner_id=$($lib ownerIdDir "$local_root")
-            if [[ -z "$($lib userNameById $owner_id)" ]]
+            if [[ -d "$local_root" ]]
             then
-                opt_uid="-u $owner_id"
+                owner_id=$($lib ownerIdDir "$local_root")
+                if [[ -z "$($lib userNameById $owner_id)" ]]
+                then
+                    opt_uid="-u $owner_id"
+                fi
+            else 
+                mkdir -m $DEFAULT_ACCESS -p $local_root
+                init_dir=YES
+            fi
+            if [[ "$passwd_chroot_enable" == "YES" ]]
+            then
+                opt_home="-h $local_root"
             fi
         fi
-        
-        adduser -s /sbin/nologin -h /var/lib/ftp -g $user_name -G ftp $opt_uid -D $user_name
+        echo "- Creating local user - '$user_name'"
+        adduser -s /sbin/nologin -g $user_name -G ftp $opt_uid $opt_home -D $user_name
         if [[ "$pass" != "NONE" ]]
         then
+            echo "- Creating password '$pass' for '$user_name'"
             passwd $user_name -d $pass
         fi
-
+        
+        if [[ "$init_dir" == "YES" ]]
+        then
+            chown $user_name:ftp $local_root
+        fi
     else
-        echo "User named already exists!"
+        echo "- User name '$user_name' already exists!"
         addgroup $user_name ftp 
-        echo "The user is added only to the ftp group."
-        pass=""
+        echo "- The user is added only to the ftp group."
+        if [[ ! -z "$local_root" ]]
+        then
+            if [[ ! -d "$local_root" ]]
+            then
+                echo "- Crating directory '$local_root' for '$user_name'"
+                mkdir -m $DEFAULT_ACCESS -p "$local_root"
+                chown $user_name:ftp "$local_root"
+            fi
+        fi
     fi 
-    echo $pass
 }
 
 _addVirtual(){
@@ -81,22 +148,49 @@ _addVirtual(){
     then
         opt_pass="-p ${pass}"
     fi
-    local buf="$($script_path/../vusers/vuser.sh -c add -u ${user_name} $opt_pass)"
-    pass=$(echo "$buf"|grep "Password"|cut -d ":" -f 2|xargs)
-    echo $pass
+    echo "- Creating virtual user - '$user_name'"
+    $script_path/../vusers/vuser.sh -c add -u ${user_name} $opt_pass
 }
 
 _add(){
     local pass=$1
     if [[ "$($configLib isVirtualUser)" == "YES" ]]
     then
-        _addAsGuest &> /dev/null
+        _addUserGuest
+        #&> /dev/null
         _addVirtual $pass
     else    
         _addLocal $pass
         if [[ "$duplicate_user" == "YES" ]]
         then
+            echo "- Init dublicate local user to virtual user"
            _addVirtual $pass 
+        fi
+    fi
+}
+
+_addUserDirConfig(){
+    local local_root=$(echo $1|tr -d '"')
+    local guest_username=$(echo $2|tr -d '"')
+    local userConf="$script_path/../lib/config.sh $user_config_dir/$user_name"  
+    if [[ ! -z "$user_config_dir" ]]
+    then
+        mkdir -p $user_config_dir
+        if [[ ! -e "$user_config_dir/$user_name" ]]
+        then
+            echo "- Creating user config -'$user_config_dir/$user_name'" 
+            touch $user_config_dir/$user_name
+        fi
+        
+        if [[ ! -z "$local_root" && -z "$($userConf configParam local_root)" ]]
+        then
+            echo "local_root=$local_root" >> $user_config_dir/$user_name
+            echo "- Added for '$user_name' parameter 'local_root=$local_root'" 
+        fi
+        if [[ ! -z "$guest_username" && -z "$($userConf configParam guest_username)" ]]
+        then
+            echo "guest_username=$guest_username" >> $user_config_dir/$user_name
+            echo "- Added for '$user_name' parameter 'guest_username=$guest_username'"
         fi
     fi
 }
@@ -138,19 +232,10 @@ EOF
 }
 
 buildTpl(){
-    
     if [[ ! -z "${user_config_dir}" && -d "$user_config_dir/template" ]]
-    then 
-        $script_path/../createFromTpl.sh -t "$user_config_dir/template" -o "$user_config_dir" -i 2
-    fi
-}
-
-_addUserDir(){
-    local user_dir="$local_root"
-    if [[ ! -z "$local_root" && ! -d "${local_root}"  ]]
     then
-       mkdir -p $local_root
-       chown $user_name:ftp $local_root
+        echo "-Create config files from templates in '$user_config_dir/template'"
+        $script_path/../lib/createFromTpl.sh -t "$user_config_dir/template" -o "$user_config_dir" -i 2
     fi
 }
 
@@ -160,6 +245,7 @@ setUserConfig(){
     config=$(echo "$config"|$script_path/../lib/tplToStr.sh)
     if [[ ! -z "$user_config_dir" ]]
     then
+        mkdir -p $user_config_dir
         echo "$config">>"$user_config_dir/$user_name"
     fi
 }
@@ -187,6 +273,7 @@ setUserDirConfig(){
     
     if [[ ! -z "$user_config_dir" ]]
     then
+        mkdir -p $user_config_dir
         echo "local_root=$local_root" >> $user_config_dir/$user_name
         if [[ ! -z "$guest_username" ]]
         then
@@ -210,11 +297,86 @@ configParam(){
     echo "$value"
 }
 
+_sortPrioritiesUsersList(){
+    local commands="$1"
+    local primary_commands secondary_commands
+    local cpath cuser cguest
+    while read -r command
+    do
+        cuser=$(echo $command|awk '{print $1}')
+        if [[ -z "$cuser" ]]
+        then
+            continue
+        fi
+        cpath=$(echo $command|awk '{print $3}')
+        cguser=$(echo $command|awk '{print $4}')
+
+        if [[ -z "$cpath" ]]
+        then
+            cpath=$($userLib configParam $cuser local_root)
+        fi
+        
+        if [[ -z "$cguser" ]]
+        then
+            cguser=$($userLib configParam $cuser guest_username)
+        fi
+        local check=NO
+        local ownerDir
+        if [[ -z "$($lib userIdByName $cuser)" && -z "$(echo "$primary_commands"|grep "'$cpath'")" ]]
+        then
+            check=YES
+            if [[ -d "$cpath" ]]
+            then
+                ownerDir="$($lib ownerIdDir "$cpath")"
+                if [[ ! -z "$($lib userNameById $ownerDir)" ]]
+                then
+                   check=NO 
+                fi
+            fi
+            if [[ "$($configLib isVirtualUser)" == "YES" && ! -z "$(echo "$primary_commands"|grep "'$cguser'")" ]]
+            then
+                check=NO
+            fi
+        fi
+        if [[ "$check" == "YES" ]]
+        then
+            primary_commands="$primary_commands\n$cuser '$cpath' '$cguser'"
+        else
+            secondary_commands="$secondary_commands\n$cuser '$cpath' '$cguser'"
+        fi
+    done < <(echo -e "$commands")
+    echo -e "$primary_commands"|while read -r command
+    do
+        if [[ -z "$command" ]]
+        then
+            continue
+        fi        
+        find_user=$(echo $command|awk '{print $1}')
+        echo "$commands"|grep "$find_user"
+    done
+    echo -e "$secondary_commands"|while read -r command
+    do
+        if [[ -z "$command" ]]
+        then
+            continue
+        fi
+        find_user=$(echo $command|awk '{print $1}')
+        echo "$commands"|grep "^\s*$find_user"
+    done
+}
+
+_formatUsersList(){
+    local list="$(echo "$1"|$script_path/../lib/tplToStr.sh)"
+    list="$(_sortPrioritiesUsersList "$list")"
+    list="$list \n\"\""
+    echo -e "$list"
+}
+
 update(){
     local pass=$1
     if [[ "$($configLib isVirtualUser)" == "YES" ]]
     then
-        $script_path/../vusers/vuser update $user_name $pass
+        $script_path/../vusers/vuser.sh -c update -u $user_name -p $pass
     else
         passwd $user_name -d $pass
     fi
@@ -223,7 +385,7 @@ update(){
 delete(){
     if [[ "$($configLib isVirtualUser)" == "YES" ]]
     then
-        $script_path/../vusers/vuser delete $user_name
+        $script_path/../vusers/vuser.sh -c delete -u $user_name
     else
         deluser $user_name
     fi     
@@ -233,17 +395,21 @@ show(){
     local id
     if [[ "$($configLib isVirtualUser)" == "YES" ]]
     then
-        $script_path/../vusers/vuser show $user_name
+        $script_path/../vusers/vuser.sh -c show -u $user_name
     else
         id=$($lib userIdByName $user_name)
         if [[ ! -z "$id" ]]
         then
+            pass=$($lib hashUserPass $user_name)
             cat <<EOF
+Type : local
+ID : $id 
 User : $user_name
-  ID : $id 
+Password hash : $pass
 EOF
         else 
-            echo "User is missing."
+            echo "User '$user_name' is missing." 1>&2
+            return 1
         fi
     fi
 }
@@ -253,26 +419,45 @@ convertLocalToGuestUsers(){
     # Thus, vsftpd has access to directories as through guest users.
     # - check user config and check local_root and if not set guest_username parameter
     #     then For the users config files, assign the parameter 'guest_username=$user_name' 
+    echo none
 }
+
 convertGuestToLocalUsers(){
-    
+    # - check guest_username for core config file, Enumerate all config users files, check guest_username ,  and set guest_username as local user and set password if check guest_username in DB .
+    echo none
 }
+
+initUsersList(){
+    local list="$(_formatUsersList "$1")"
+
+    echo -e "$list"|while read -r command
+    do
+        $0 -c $config_file init $command 
+    done
+}
+
 init(){
-    local pass=$1
-    local root=$2
+    #local pass=$(echo $1|tr -d '"')
+    local pass=${1%\"};pass=${pass#\"}
+    local dir=$2
     local guest=$3
-    if [[ ! -z "$root" ]]
+    if [[ ! -z "$dir" || ! -z "$guest" ]]
     then
-        root=$(echo "$root"|$script_path/../lib/tplToStr.sh)
+        dir=$(echo "$dir"|$script_path/../lib/tplToStr.sh)
         if [[ ! -z "$guest" ]]
         then
             guest=$(echo "$guest"|$script_path/../lib/tplToStr.sh)
         fi
-        setUserDirConfig root guest
+        _addUserDirConfig $dir $guest
     fi
-    _initUserSettings 
-    _add $pass
-    _addUserDir
+    if [[ ! -z "$user_name" ]]
+    then
+        _initUserSettings 
+        _add $pass
+    elif [[ "$($configLib isVirtualUser)" == "YES" ]]
+    then
+        _addShareUserGuest
+    fi
 }
 
 if [[ "$command" == "buildTpl" || \
@@ -283,9 +468,10 @@ if [[ "$command" == "buildTpl" || \
     "$command" == "init" || \
     "$command" == "update" || \
     "$command" == "delete" || \
-    "$command" == "show"  ]]
+    "$command" == "show" || \
+    "$command" == "initUsersList" ]]
 then
-   $command $@
+   $command "$@"
 elif [[ -z $command ]]
 then
 _help

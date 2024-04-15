@@ -27,8 +27,8 @@ done
 
 if [[ -z "$user" ]]
 then
-    echo "Warn: Option [-u 'user'] is required"
-    return 0
+    echo "($0) Warn: Option [-u 'user'] is required">&2
+    return 1
 fi
 
 case "${command}" in
@@ -41,7 +41,8 @@ case "${command}" in
     "update")
         $script_path/update_user.sh $user $password
     ;;
+    "show")
+        $script_path/show_user.sh $user $password
+    ;;
 esac
-
-$script_path/show_user.sh $user $password
 

@@ -2,23 +2,25 @@ FROM alpine:latest
 
 
 ENV FTP_VUSER_DB=/mnt/data/\${HOSTNAME}/DB/virtual_users.db
-
-ENV PASV_ADDRESS=
-ENV FTP_USER=
-ENV FTP_PASS=
-ENV LOCAL_ROOT=/mnt/data/\${HOSTNAME}/ftp/\$USER
+ENV USERS_LIST=
 
 ENV VSFTPD_CONFIG=
-
-
+ENV PASV_ADDRESS=
+ENV DEFAULT_ACCESS=700
 
 RUN <<EOF
 apk update 
 apk upgrade
-apk add openrc vsftpd gettext gettext coreutils sqlite
-#syslog-ng busybox-openrc
-#rc-update add syslog boot
+apk add openrc vsftpd gettext gettext coreutils sqlite openssl
 EOF
+
+RUN <<EOF
+#apk add syslog-ng busybox-openrc
+##rc-update add syslog boot
+#rc-status
+#touch /run/openrc/softlevel
+EOF
+
 RUN <<EOF
 apk add  --repository="https://dl-cdn.alpinelinux.org/alpine/edge/testing" pam_sqlite3 
     
@@ -28,6 +30,7 @@ table = accounts
 user_column = user_name
 pwd_column = user_password
 pwd_type_column = password_type
+pw_type=md5
 expired_column = acc_expired
 newtok_column = acc_new_pwreq
 debug
@@ -44,8 +47,9 @@ FTP_VUSER_DB="\$(echo \$FTP_VUSER_DB|/entrypoint/lib/tplToStr.sh)"
 
 cat <<EOF3 > /etc/pam.d/vsftpd_virtual
 #%PAM-1.0
-auth	required	pam_sqlite3.so	database=\${FTP_VUSER_DB}
+auth	required	pam_sqlite3.so	database=\${FTP_VUSER_DB} 
 account	required	pam_sqlite3.so	database=\${FTP_VUSER_DB}
+password    required    pam_sqlite3.so database=\${FTP_VUSER_DB}
 session	required	pam_loginuid.so
 EOF3
 if [[ ! -e "\${FTP_VUSER_DB}" ]]
@@ -63,7 +67,7 @@ EOF2
 
 chown -R root:root "/entrypoint/"
 chmod -R 755 "/entrypoint/"
-ln -s /entrypoint/adm/user.sh /usr/bin/ftpuser
+ln -s /entrypoint/adm/ftpuser.sh /usr/bin/ftpuser
 EOF
 
 #VOLUME "/mnt/data"
