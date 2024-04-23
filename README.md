@@ -1,4 +1,13 @@
-# Alpine+vsftpd+pam_sqlite3.so
+## Tags
+
+alexeyp0708/dev-vsftpd:latest  alexeyp0708/dev-vsftpd:alpa  
+[GitHub](https://github.com/alexeyp0708/docker-dev-vsftpd-alpine)
+
+## Build information
+OS - Alpine  
+FTP - vsftpd  
+User storage - SQLite3  
+PAM Authentication - [pam_sqlite3.so](https://pkgs.alpinelinux.org/package/edge/testing/x86_64/pam_sqlite3)  
 
 ## Description
 
@@ -6,12 +15,15 @@ The task  of the project is an FTP server for Backend developers.
 Designed to synchronize scripts in volumes to which other Docker containers are connected.
 In this case, FTP does not change the directory rights and works with it as is.
 
+Why choose this image?
+Because you can easily configure it for volumes that are linked to other containers in order to synchronize scripts/data between the client and volumes.
+
 ## Definitions
  
 - Local user is a user that is created in the operating system and on whose behalf works with the user’s working directory.
 - guest user is a local user account on behalf of which virtual users with the specified directory work.
 - Virtual user - these are users of the FTP service only, who have access to FTP through the PAM service.
-- Working directory - Directory to which the user has access via FTP
+- Working directory - Directory to which the user has access via FTP (Each working directory can be a mounted  volume)
 
 
 ## Peculiarities 
@@ -56,8 +68,7 @@ Then the container data  will be created each time in a new directory.
 Delete the ftp_test volume every time you want to create a new data stack.
 `docker volume rm ftp_test`
 
-Connect your FTP client (172.19.32.4:21 ->passive mode->user:test) 
-Alpine
+Connect your FTP client (172.19.32.4:21 ->passive mode->user:test)   
 
 Warning: Filezilla may not work in passive mode with vsftpd.
 
@@ -69,9 +80,10 @@ File `USERS_LIST.env`
 ```
 user1
 user2
-user3 ""  /mnt/data/${HOSTNAME}/ftp_users/user3 guest_user3
+user3 "" /mnt/data/${HOSTNAME}/ftp_users/user3 guest_user3
 user4 "" /mnt/data/${HOSTNAME}/ftp_users/user4 guest_user4
 ```
+Schema - `user [password] [/work/directory] [guest_user]`  
 It is recommended to assign a new local user for each existing working directory.
 When creating virtual users, it is recommended to assign a new guest user for each existing working directory.
 
@@ -82,7 +94,7 @@ where the variables `${VAR}` are replaced with values.
 ### Using local users
 
 Create an additional settings file `VSFTPD_CONFIG.env`.  
-Its contents through the VSFTPD_CONFIG environment variable are integrated into the config file /etc/vsftpd/collection/basic.conf
+Its contents through the VSFTPD_CONFIG environment variable are integrated into the config file `/etc/vsftpd/collection/basic.conf`
 
 ```
 ## If background=YES, then the ability to display information on the display will be implemented.   
@@ -104,18 +116,16 @@ ftp_image -c /etc/vsftpd/collection/basic.conf
 Note:
 Alternative way  is transfer the file  `USERS_LIST.env`  in the container via  copied  or mounted.
 And specify the path to the file when starting the container
-`run ... ftp_image -c /etc/vsftpd/collection/basic.conf -u /USERS_LIST.env` ,
+`docker run ... ftp_image -c /etc/vsftpd/collection/basic.conf -u /USERS_LIST.env` ,
 
 Entrypoint will create:
-- User `user1`.  If the /mnt/data/test_host/ftp directory exists, it will create a user `user1` with the ID of the directory owner  (if he does not exist).
-- User `user2`.  Will have limited rights to the /mnt/data/test_host/ftp .
-- User`user3` and  `/etc/vsftpd/collection/users/user3` config file . If the `/mnt/data/test_host/ftp_users/user3` directory exists, it will create a user `user1` with the ID of the directory owner (if he does not exist).
-- User`user4` and  `/etc/vsftpd/collection/users/user4`config file. ЕIf the `/mnt/data/test_host/ftp_users/user4` directory exists, it will create a user `user4`  with the ID of the directory owner (if he does not exist).
-directory, since its owner will be `user3`
-- Will create the directory `/mnt/data/test_host/ftp` if it does not exist and assign it as owner `user1`Access rights  -740.
-- Creates directory `/mnt/data/test_host/ftp_users/user3` if it does not exist and assigns it as owner `user4` Access rights  -740.
-- Creates directory directory `/mnt/data/test_host/ftp_users/user4` if it does not exist and assign it as owner `user4` Access rights  -740.
-
+- `user1` local  user .  If the /mnt/data/test_host/ftp directory exists, it will create a user `user1` with the ID of the directory owner  (if he does not exist).
+- `user2` local  user.  Will have limited rights to the /mnt/data/test_host/ftp .
+- `user3` local  user and  `/etc/vsftpd/collection/users/user3` config file . If the `/mnt/data/test_host/ftp_users/user3` directory exists, it will create a user `user1` with the ID of the directory owner (if he does not exist).
+- `user4` local  user and  `/etc/vsftpd/collection/users/user4`config file. If the `/mnt/data/test_host/ftp_users/user4` directory exists, it will create a user `user4`  with the ID of the directory owner (if he does not exist).
+- Will create the directory `/mnt/data/test_host/ftp` if it does not exist and assign it as owner `user1`.Access rights  -700.
+- Creates directory `/mnt/data/test_host/ftp_users/user3` if it does not exist and assigns it as owner `user3`. Access rights  -700.
+- Creates directory directory `/mnt/data/test_host/ftp_users/user4` if it does not exist and assign it as owner `user4`. Access rights  -700.
 
 
 Disable the firewall on the client
@@ -154,14 +164,14 @@ docker run --rm -it  --name ftp_test \
 ftp_image -c /etc/vsftpd/collection/basic.conf
 ```
 
-The entrypoint will created:
--virtual user `user1`.  Will be bind with the local user `ftp-data` and have access to the directory `/mnt/data/test_host/ftp`  
-- local user `ftp-data`. If the `/mnt/data/test_host/ftp`  directory exists, it will create a user `ftp-data` with the ID of the directory owner (if  he does not exist).
-- virtual user `user2` .Will be bind with the local user `ftp-data` and have access to the directory `/mnt/data/test_host/ftp`
-- virtual user `user3` and `/etc/vsftpd/collection/users/user3` config file . Virtual user will be bind with the local user `guest_user3` and have access to the directory `/mnt/data/test_host/ftp_users/user3`.
-- local user `guest_user3`. If the `/mnt/data/test_host/ftp_users/user3 ` directory exists, it will create a user `guest_user3` with the ID of the directory owner (if he does not exist).
-- virtual user`user4` and `/etc/vsftpd/collection/users/user4` config file. Virtual user will be bind with the local user  `guest_user4` and have access to the directory `/mnt/data/test_host/ftp_users/user4`.
--  local user  `guest_user4`.  If the `/mnt/data/test_host/ftp_users/user4` directory exists, it will create a user `guest_user4` with the ID of the directory owner (if he does not exist).
+The entrypoint will created: 
+- `user1` virtual user .  Will be bind with `ftp-data` local user  and have access to the directory `/mnt/data/test_host/ftp`  
+- `ftp-data` local user. If the `/mnt/data/test_host/ftp`  directory exists, it will create  `ftp-data` user with the ID of the directory owner (if  he does not exist).
+- `user2` virtual user  .Will be bind with `ftp-data` local user  and have access to the directory `/mnt/data/test_host/ftp`
+- `user3`  virtual user and `/etc/vsftpd/collection/users/user3` config file . Virtual user will be bind with  `guest_user3` local user and have access to the directory `/mnt/data/test_host/ftp_users/user3`.
+- `guest_user3` local user. If the `/mnt/data/test_host/ftp_users/user3 ` directory exists, it will create  `guest_user3` user with the ID of the directory owner (if he does not exist).
+-`user4`  virtual user and `/etc/vsftpd/collection/users/user4` config file. Virtual user will be bind with the local user  `guest_user4` and have access to the directory `/mnt/data/test_host/ftp_users/user4`.
+-   `guest_user4` local user .  If the `/mnt/data/test_host/ftp_users/user4` directory exists, it will create `guest_user4` user  with the ID of the directory owner (if he does not exist).
 - Will create the directory `/mnt/data/test_host/ftp` if it does not exist and assign it as owner `ftp-data`
 - Will create the directory `/mnt/data/test_host/ftp_users/user3` if it does not exist and assign it as owner `guest_user3`
 - Will create the directory `/mnt/data/test_host/ftp_users/user4` if it does not exist and assign it as owner `guest_user4`
@@ -199,9 +209,9 @@ or
 or 
 `-e VSFTPD_CONFIG="first_line_command=value \n second_line_command=value"`
 
-When running the command format `docer run ... image_vsftpd` - the default config file `/etс/vsftpd/vsftpd.conf` will be used .
+If runned the command format -`docer run ... image_vsftpd`, then will be used  the default config file `/etс/vsftpd/vsftpd.conf` .
  
-When running the command format `docer run ... -e VSFTPD_CONFIG="$(cat VSFTPD_CONFIG.env)" image_vsftpd`, then it will be used  
+If runned the command format `docer run ... -e VSFTPD_CONFIG="$(cat VSFTPD_CONFIG.env)" image_vsftpd`, then  will be used
 config file `/etс/vsftpd/collection/env.conf` which has no parameters and into which the environment variable `VSFTPD_CONFIG` is integrated.
 
 When you run a command in the format `docer run ... -e VSFTPD_CONFIG="$(cat VSFTPD_CONFIG.env)" image_vsftpd -c /etс/vsftpd/collection/basic.conf` then  will be used the config file `/etс/vsftpd/collection/basic.conf` into which the environment variable `VSFTPD_CONFIG` is integrated
@@ -217,11 +227,11 @@ You can also specify a list of users in a enveroment  variable
 
 User stirng format for users list:
  `user_name [password] [local_root] [guest_username]`
-Where:
-`user_name` - username to create an account
-`password` - user password.   ""- empty password if you need to pass the following parameters.
-`local_root` - user's working directory.  "" - empty value if you need to pass the following parameters
-`guest_username` - guest user, on whose behalf the virtual user will use the working directory (for virtual users)
+Where:  
+- `user_name` - username to create an account
+- `password` - user password.   ""- empty password if you need to pass the following parameters.
+- `local_root` - user's working directory.  "" - empty value if you need to pass the following parameters
+- `guest_username` - guest user, on whose behalf the virtual user will use the working directory (for virtual users)
 
 Each new line is a new user.
 
@@ -250,7 +260,7 @@ Warn - All config files and templates must be Unix format. (UTF8)+(LF)
 - `docker run -e VSFTPD_CONFIG="$(cat ${VSFTPD_CONFIG.conf})" -e USERS_LIST="user1\nuser2" ... ftp_image`  
 - `docker run ... --rm ftp_image -h` -  Description run options  
 - `docker run ... ftp_image -c /mnt/data/config/ftp/my.conf` - Set your own configuration file. 
--  `docker run ... ftp_image -u /mnt/data/config/ftp/USERS_LIST.env` - Users list for ctreating accounts. - File removing after initialization.
+-  `docker run ... ftp_image -u /mnt/data/config/ftp/USERS_LIST.env` - Users list for ctreating accounts. - File removed after initialization.
 If there is a `/mnt/data/config/ftp/template` directory with a `my.conf.tpl` template in the config file directory, 
 then the template will be converted into a `/mnt/data/config/ftp/my.conf`. 
 All environment variables in the template will be replaced.
@@ -295,23 +305,23 @@ https://linux.die.net/man/5/vsftpd.conf
 
 The entrypoint script in the configuration file defines some parameters:
 
-is a virtual user
+is a virtual users:
 ```
 pam_service_name=vsftpd_virtual
 virtual_use_local_privs=YES
 ```
 
-Default local directory (Required)
+Default local directory (Required):
 ```
 local_root=/data/ftp
 ```
 
-Default guest user  (Required for virtual users)
+Default guest user  (Required for virtual users):
 ```
 guest_username=ftp
 ```
 
-Directory users configs 
+Users  configs directory :
 ```
 user_config_dir=/data/config/users
 ```
@@ -323,12 +333,12 @@ passwd_chroot_enable=NO
 ```
 
 
-local directory in user config 
+local directory in user config:
 ```
 local_root=/data/ftp/users
 ```
 
- guest user  in user config 
+ guest user  in user config: 
  ```
 guest_username=ftp_user1
 ```
@@ -386,10 +396,3 @@ Protocols and Ports tab -> Remote port 20,21
 Area tab -> Remote addresses -> Otional(IP/local network/interface ...)
 ```
 (You can offer other instructions on how to set up different clients.)
-
-
-
-
-
-
-

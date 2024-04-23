@@ -177,5 +177,5 @@ init_log
 
 source "$script_path/source_after.sh"
 
-vsftpd "$config_file" && info && unset USERS_LIST  && tail_pid_vsftpd
+vsftpd "$config_file" && info && tail_pid_vsftpd
 
