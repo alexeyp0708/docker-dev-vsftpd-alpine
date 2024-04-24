@@ -37,8 +37,8 @@ userLib="$script_path/users/user.sh -c $config_file"
 configLib="$script_path/lib/config.sh $config_file"
 
 lib="$script_path/lib/system.sh"
-VSFTPD_CONFIG="$(echo -e "$VSFTPD_CONFIG")"
-
+VSFTPD_CONFIG="$(echo -e $VSFTPD_CONFIG)"
+USERS_LIST="$(echo -e $USERS_LIST)"
 init_users(){
     if [[ -z "$USERS_LIST" ]]
     then
@@ -107,6 +107,7 @@ info(){
     then
         return 0
     fi
+    echo "INIT INFO"
     local guest_username=$($configLib configParam guest_username)
     if [[ -z "$guest_username" ]]
     then
@@ -174,8 +175,8 @@ EOF
 
 init
 init_log
-
+info
 source "$script_path/source_after.sh"
-
-vsftpd "$config_file" && info && tail_pid_vsftpd
+echo "RUN ENTRYPOINT"
+vsftpd "$config_file" && tail_pid_vsftpd 2>&1
 

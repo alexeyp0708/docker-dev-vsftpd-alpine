@@ -1,0 +1,31 @@
+services:
+  ftp:
+    image: alexeyp0708/test-vsftpd:latest
+    build: ../
+    container_name: ftp
+    restart: always
+    environment:
+      HOSTNAME: FTP  
+      USERS_LIST: >
+        phpserver "phpserver" /mnt/data/phpserver phpserver\n
+        mysql83 "mysql83" /mnt/data/mysql83 mysql83
+      VSFTPD_CONFIG: >
+        background=YES\n
+        local_root=/mnt/data/FTP/$$USER\n
+        guest_enable=YES\n
+        pam_service_name=vsftpd_virtual\n
+        virtual_use_local_privs=YES
+    command: -c /etc/vsftpd/collection/basic.conf
+    volumes:
+      - dev:/mnt/data
+    networks:
+      vlan_network: 
+        ipv4_address: "172.19.32.4"     
+networks:
+  default:
+    driver: bridge
+  vlan_network:
+    name: db_net
+    external: true
+volumes:
+  dev:
