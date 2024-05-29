@@ -11,7 +11,7 @@ ENV DEFAULT_ACCESS=700
 RUN <<EOF
 apk update 
 apk upgrade
-apk add openrc vsftpd gettext gettext coreutils sqlite openssl
+apk add openrc vsftpd gettext coreutils sqlite openssl
 EOF
 
 RUN <<EOF
@@ -39,7 +39,7 @@ EOF2
 EOF
 
 #RUN adduser -u ${USER_ID} ftp && addgroup -g ${GROUP_ID} ftp
-COPY ./buf/copy /
+COPY ./copy /
 
 RUN <<EOF
 cat <<EOF2 >/entrypoint/instructions.sh
