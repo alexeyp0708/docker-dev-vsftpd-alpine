@@ -118,7 +118,8 @@ _addLocal(){
         if [[ "$pass" != "NONE" ]]
         then
             echo "- Creating password '$pass' for '$user_name'"
-            passwd $user_name -d $pass
+            #passwd $user_name -d $pass
+            echo "$user:$pass"|chpasswd
         fi
         
         if [[ "$init_dir" == "YES" ]]
